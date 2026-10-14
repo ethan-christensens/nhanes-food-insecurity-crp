@@ -15,4 +15,4 @@ This repository contains a reproducible quantitative analysis investigating the 
 * **Key Packages:** `tidyverse`, `ggplot2` (or whatever packages you used)
 
 ## Viewing the Report
-You can view the fully rendered HTML report directly in your browser by downloading or viewing `output/analysis.html`.
+You can view the fully rendered HTML report directly in your browser by downloading.
