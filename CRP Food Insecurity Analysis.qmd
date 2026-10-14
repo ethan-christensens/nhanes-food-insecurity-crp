@@ -1,0 +1,137 @@
+---
+title: "Food insecurity and C-reactive protein in NHANES"
+author: "Ethan Christensen"
+format: 
+  html:
+    self-contained: true
+editor: visual
+---
+
+```{r setup}
+#| include: false
+library(dplyr)
+library(ggplot2)
+```
+
+## Summary
+
+This report examines whether self-reported inability to afford balanced meals is associated with higher blood levels of C-reactive protein (CRP), a marker of systemic inflammation, in the NHANES sample. After restricting to participants with complete data on CRP, food-insecurity response, and BMI, analysis of variance on log-transformed CRP shows a significant difference among the three response categories (Often, Sometimes, Never). Participants who report never having this difficulty have lower average log CRP than those who report it often. Adding BMI as a covariate in a linear model reduces but does not eliminate the association for the Never versus Often contrast. The findings are consistent with a link between this form of food insecurity and elevated inflammation, though residual confounding and the cross-sectional design limit causal interpretation.
+
+## Data preparation
+
+The NHANES CRP data file was read from the course repository. Observations were retained only if CRP, balanced_meals, and BMI were all non-missing, and if the balanced_meals response was one of the three substantive codes (1 = Often true, 2 = Sometimes true, 3 = Never true). Codes 7 (Refused) and 9 (Don't know) were dropped because they do not provide usable information about food access. CRP values of zero or negative, if any, would also be excluded for the log transformation; none remained after the missing-value filter. The cleaned data frame contains 6680 observations.
+
+```{r}
+CRP_raw <- read.csv("https://raw.githubusercontent.com/dkon1/quant_life_quarto/refs/heads/main/final%20project%20data/NHANES_CRP.csv")
+
+crp_df <- CRP_raw %>%
+  filter(!is.na(c_protein),
+         !is.na(balanced_meals),
+         !is.na(BMI),
+         balanced_meals %in% c(1, 2, 3),
+         c_protein > 0) %>%
+  mutate(
+    balanced_meals = factor(
+      balanced_meals,
+      levels = c(1, 2, 3),
+      labels = c("Often", "Sometimes", "Never")
+    ),
+    log_crp = log(c_protein)
+  )
+```
+
+The factor levels for balanced_meals were ordered from most to least severe food-access difficulty so that contrasts would be interpretable. Log CRP was computed because the raw CRP distribution is strongly right-skewed.
+
+```{r}
+nrow(crp_df)
+table(crp_df$balanced_meals)
+```
+
+## Data description and visualization
+
+Side-by-side boxplots of log CRP by balanced_meals category show a modest downward shift in the distribution as the reported difficulty decreases from Often to Never. The boxes and whiskers also indicate substantial within-group variability and a number of high outliers in every category.
+
+```{r}
+ggplot(crp_df, aes(x = balanced_meals, y = log_crp)) +
+  geom_boxplot(outlier.alpha = 0.3) +
+  labs(
+    x = "Could not afford balanced meals",
+    y = "log(CRP mg/L)",
+    title = "Log CRP by food-insecurity response"
+  ) +
+  theme_bw()
+```
+
+A scatter plot of log CRP against BMI, with points colored by balanced_meals, illustrates the strong positive association between BMI and inflammation. The three food-insecurity groups occupy largely overlapping BMI ranges, so any difference in CRP across groups is not explained solely by large differences in body mass.
+
+```{r}
+ggplot(crp_df, aes(x = BMI, y = log_crp, color = balanced_meals)) +
+  geom_point(alpha = 0.25, size = 1) +
+  labs(
+    x = "BMI",
+    y = "log(CRP mg/L)",
+    color = "Balanced meals",
+    title = "Log CRP versus BMI by food-insecurity response"
+  ) +
+  theme_bw()
+```
+
+Summary statistics by group confirm the visual pattern. Mean and median CRP are highest in the Often category and lowest in the Never category; the same ordering appears on the log scale.
+
+```{r}
+crp_df %>%
+  group_by(balanced_meals) %>%
+  summarise(
+    n = n(),
+    mean_CRP = mean(c_protein),
+    sd_CRP = sd(c_protein),
+    median_CRP = median(c_protein),
+    mean_log = mean(log_crp),
+    sd_log = sd(log_crp)
+  )
+```
+
+## Statistical analysis
+
+Because balanced_meals is a three-level categorical variable, a one-way analysis of variance was used to test equality of mean log CRP across the three groups. The ANOVA is highly significant (F = 16.12 on 2 and 6677 degrees of freedom, p \< 0.0001).
+
+```{r}
+aov_fit <- aov(log_crp ~ balanced_meals, data = crp_df)
+summary(aov_fit)
+```
+
+Tukey pairwise comparisons show that the Never group differs significantly from both the Often and Sometimes groups, while the difference between Often and Sometimes does not reach the conventional 0.05 threshold after multiplicity adjustment.
+
+```{r}
+TukeyHSD(aov_fit)
+```
+
+To assess whether the association is explained by body mass, a linear model of log CRP on balanced_meals plus continuous BMI was fitted. BMI has a large positive coefficient. After adjustment for BMI the Never-versus-Often contrast remains statistically significant, although its magnitude is reduced.
+
+```{r}
+lm_fit <- lm(log_crp ~ balanced_meals + BMI, data = crp_df)
+summary(lm_fit)
+```
+
+Model assumptions were checked with residual plots. Residuals versus fitted values from the linear model show no strong systematic pattern, and the normal Q-Q plot is approximately linear in the central range, supporting the use of log CRP and the linear specification.
+
+```{r}
+par(mfrow = c(1, 2))
+plot(lm_fit, which = 1)
+plot(lm_fit, which = 2)
+par(mfrow = c(1, 1))
+```
+
+The one-way ANOVA assumes independent observations, roughly equal variances, and approximate normality of residuals within groups. Independence is assumed for this analysis, though the sampling techniques used by NHANES may of course introduce some limitations to this assumption for the analysis. Group standard deviations on the log scale are comparable. The residual diagnostics above indicate that the normality and linearity assumptions are acceptable after the log transformation.
+
+## Discussion
+
+Participants who reported never experiencing difficulty affording balanced meals have lower average CRP levels than those who report this difficulty often or sometimes. Statistically significant difference persists, though magnitude of the association was weakened, after adjustment for BMI. The result is consistent with the hypothesis that this dimension of food insecurity is associated with elevated systemic inflammation in the NHANES adult sample.
+
+The analysis is cross-sectional, so the temporal order of food insecurity and inflammation cannot be established. Residual confounding by unmeasured factors such as diet quality, chronic disease, or stress remains possible. CRP itself is a non-specific marker; elevated values may reflect infection or other inflammatory conditions unrelated to food access. Despite these limitations, the data support a measurable association between self-reported inability to afford balanced meals and higher CRP, and the association is not fully explained by differences in BMI.
+
+## References
+
+Centers for Disease Control and Prevention. National Health and Nutrition Examination Survey. https://wwwn.cdc.gov/nchs/nhanes/
+
+NHANES CRP analysis data file provided for BIOS 20151 final project: https://raw.githubusercontent.com/dkon1/quant_life_quarto/refs/heads/main/final%20project%20data/NHANES_CRP.csv
